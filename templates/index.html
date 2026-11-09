@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的全功能小说阅读器</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1e1e1e; color: #d4d4d4; padding: 20px; line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; color: #569cd6; margin-bottom: 20px; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        input {
+            flex: 1; padding: 12px; border: 1px solid #3c3c3c; border-radius: 6px;
+            background-color: #2d2d2d; color: #fff; font-size: 16px; outline: none;
+        }
+        input:focus { border-color: #569cd6; }
+        button {
+            padding: 12px 24px; background-color: #0e639c; color: white; border: none;
+            border-radius: 6px; font-size: 16px; cursor: pointer; transition: 0.2s;
+        }
+        button:hover { background-color: #1177bb; }
+        .result-box {
+            background-color: #252526; border: 1px solid #3c3c3c; border-radius: 6px;
+            padding: 20px; white-space: pre-wrap; font-size: 16px; max-height: 600px; overflow-y: auto;
+        }
+        .loading { display: none; text-align: center; color: #ce9178; margin: 20px 0; }
+        .book-list { display: none; margin-bottom: 20px; }
+        .book-item {
+            background-color: #2d2d2d; padding: 15px; margin-bottom: 10px;
+            border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+        }
+        .book-item:hover { border-color: #569cd6; background-color: #333; }
+        .author { color: #888; font-size: 14px; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📖 全功能小说阅读器</h1>
+
+        <!-- 搜索书籍区域 -->
+        <div class="input-group">
+            <input type="text" id="searchInput" placeholder="第一步：输入书名或作者 (例如: 剑来)" autocomplete="off">
+            <button onclick="searchBook()">搜索书籍</button>
+        </div>
+
+        <!-- 搜索结果列表 -->
+        <div id="bookList" class="book-list"></div>
+
+        <!-- 阅读章节区域 (默认隐藏) -->
+        <div id="readArea" style="display: none;">
+            <div class="input-group">
+                <input type="text" id="chapterInput" placeholder="第二步：请输入章节序号 (例如: 688)" autocomplete="off">
+                <button onclick="fetchChapter()">阅读章节</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">正在努力检索中，请稍候...</div>
+        <div id="result" class="result-box">欢迎使用！请先在上方搜索书名。</div>
+    </div>
+
+    <script>
+        // 记录当前选中的书籍网址
+        let currentBookUrl = "";
+
+        // 1. 搜索书籍功能
+        async function searchBook() {
+            const keyword = document.getElementById('searchInput').value.trim();
+            if (!keyword) { alert("请输入书名或作者！"); return; }
+
+            const loading = document.getElementById('loading');
+            const resultBox = document.getElementById('result');
+            const bookList = document.getElementById('bookList');
+            const readArea = document.getElementById('readArea');
+
+            loading.style.display = 'block';
+            resultBox.style.display = 'none';
+            bookList.style.display = 'none';
+            readArea.style.display = 'none';
+
+            try {
+                // 调用后端的 /search 接口
+                const response = await fetch(`/search?keyword=${encodeURIComponent(keyword)}`);
+                const data = await response.json();
+
+                if (data.code === 200 && data.data.length > 0) {
+                    bookList.innerHTML = '<h3>👇 请选择你要阅读的书籍：</h3>';
+                    data.data.forEach(book => {
+                        const div = document.createElement('div');
+                        div.className = 'book-item';
+                        div.innerHTML = `<strong>${book.title}</strong><span class="author">作者: ${book.author}</span>`;
+                        // 点击书名后，进入阅读模式
+                        div.onclick = () => selectBook(book.url, book.title);
+                        bookList.appendChild(div);
+                    });
+                    bookList.style.display = 'block';
+                } else {
+                    resultBox.style.display = 'block';
+                    resultBox.textContent = "没有找到相关书籍，请换个关键词。";
+                }
+            } catch (error) {
+                resultBox.style.display = 'block';
+                resultBox.textContent = "❌ 搜索请求失败。";
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // 2. 选中书籍，显示章节输入框
+        function selectBook(url, title) {
+            currentBookUrl = url;
+            document.getElementById('bookList').style.display = 'none';
+            document.getElementById('readArea').style.display = 'block';
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('result').textContent = `已选中《${title}》，请输入章节号开始阅读。`;
+        }
+
+        // 3. 获取章节正文
+        async function fetchChapter() {
+            if (!currentBookUrl) { alert("请先搜索并选择一本书！"); return; }
+
+            const chapterNum = document.getElementById('chapterInput').value.trim();
+            if (!chapterNum) { alert("请输入章节号！"); return; }
+
+            const resultBox = document.getElementById('result');
+            const loading = document.getElementById('loading');
+
+            loading.style.display = 'block';
+            resultBox.textContent = '';
+
+            try {
+                // 调用后端的 /get_chapter 接口
+                const response = await fetch('/get_chapter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        book_url: currentBookUrl,
+                        chapter_num: parseInt(chapterNum)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultBox.textContent = data.chapter_name + '\n\n' + data.content;
+                } else {
+                    resultBox.textContent = "❌ 出错了: " + (data.detail || "未知错误");
+                }
+            } catch (error) {
+                resultBox.textContent = "❌ 网络请求失败。";
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
